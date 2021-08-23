@@ -2,7 +2,7 @@
   {% if about != 'null' %}
     {% set about = about|striptags %}
     <p class="about">
-      {{ h.truncate(about, length=160, whole_word=True) }}
+      {{ about|truncate(160) }}
     </p>
   {% endif %}
   <div class="btn-group">
@@ -18,10 +18,6 @@
     <dl>
       <dt>{{ _('Datasets') }}</dt>
       <dd>{{ h.SI_number_span(number_created_packages) }}</dd>
-    </dl>
-    <dl>
-      <dt>{{ _('Edits') }}</dt>
-      <dd>{{ h.SI_number_span(number_of_edits) }}</dd>
     </dl>
   </div>
 </div>

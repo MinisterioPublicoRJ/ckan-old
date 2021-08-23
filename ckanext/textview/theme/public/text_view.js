@@ -56,19 +56,20 @@ ckan.module('text_view', function (jQuery) {
           var highlighted;
 
           if (p.language) {
-            highlighted = hljs.highlight(p.language, data, true).value;
+            highlighted = hljs.highlight(data, {'language': p.language, 'ignoreIllegals': true}).value;
           } else {
-            highlighted = '<pre>' + data + '</pre>';
+            highlighted = $('<pre></pre>').text(data)[0].outerHTML;
           }
 
-          self.el.html(highlighted);
+          self.el[0].innerHTML = highlighted;
         },
         error: function(jqXHR, textStatus, errorThrown) {
-          if (textStatus == 'error' && jqXHR.responseText.length) {
+          if (textStatus == 'error' && jqXHR.responseText) {
             self.el.html(jqXHR.responseText);
           } else {
-            self.el.html(self_('An error occurred: %(text)s %(error)s',
-                               {text: textStatus, error: errorThrown}));
+            self.el.html(self._(
+              'An error occured during AJAX request. Could not load view.')
+            );
           }
         }
       });

@@ -9,13 +9,37 @@ from jinja2 import loaders
 from jinja2 import ext
 from jinja2.exceptions import TemplateNotFound
 from jinja2.utils import open_if_exists, escape
-from jinja2 import Environment
+
+from six import text_type
+from six.moves import xrange
 
 import ckan.lib.base as base
 import ckan.lib.helpers as h
+from ckan.common import config
 
 
 log = logging.getLogger(__name__)
+
+
+def _get_extensions():
+    return ['jinja2.ext.do', 'jinja2.ext.loopcontrols',
+            SnippetExtension,
+            CkanExtend,
+            CkanInternationalizationExtension,
+            LinkForExtension,
+            UrlForStaticExtension,
+            UrlForExtension,
+            AssetExtension]
+
+
+def get_jinja_env_options():
+    return dict(
+        loader=CkanFileSystemLoader(config['computed_template_paths']),
+        autoescape=True,
+        extensions=_get_extensions(),
+    )
+
+
 ### Filters
 
 def empty_and_escape(value):
@@ -58,7 +82,7 @@ class CkanInternationalizationExtension(ext.InternationalizationExtension):
             for arg in args:
                 if isinstance(arg, nodes.Const):
                     value = arg.value
-                    if isinstance(value, unicode):
+                    if isinstance(value, text_type):
                         arg.value = regularise_html(value)
         return node
 
@@ -83,13 +107,13 @@ class CkanExtend(ext.Extension):
         node = nodes.Extends(lineno)
         template_path = parser.filename
         # find where in the search path this template is from
-        index = 0
+        current_path = None
         if not hasattr(self, 'searchpath'):
             return node
         for searchpath in self.searchpath:
             if template_path.startswith(searchpath):
+                current_path = searchpath
                 break
-            index += 1
 
         # get filename from full path
         filename = template_path[len(searchpath) + 1:]
@@ -105,8 +129,8 @@ class CkanExtend(ext.Extension):
                              % template_path)
 
         # provide our magic format
-        # format is *<search path parent index>*<template name>
-        magic_filename = '*' + str(index) + '*' + filename
+        # format is *<search path parent directory>*<template name>
+        magic_filename = '*' + current_path + '*' + filename
         # set template
         node.template = nodes.Const(magic_filename)
         return node
@@ -160,13 +184,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     def get_source(self, environment, template):
         # if the template name starts with * then this should be
         # treated specially.
-        # format is *<search path parent index>*<template name>
+        # format is *<search path parent directory>*<template name>
         # so we only search from then downwards.  This allows recursive
         # ckan_extends tags
         if template.startswith('*'):
             parts = template.split('*')
             template = parts[2]
-            searchpaths = self.searchpath[int(parts[1]) + 1:]
+            index = self.searchpath.index(parts[1])
+            searchpaths = self.searchpath[index + 1:]
         else:
             searchpaths = self.searchpath
         # end of ckan changes
@@ -178,7 +203,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
                 continue
             try:
                 contents = f.read().decode(self.encoding)
-            except UnicodeDecodeError, e:
+            except UnicodeDecodeError as e:
                 log.critical(
                     'Template corruption in `%s` unicode decode errors'
                     % filename
@@ -206,7 +231,7 @@ class BaseExtension(ext.Extension):
 
     def parse(self, parser):
         stream = parser.stream
-        tag = stream.next()
+        tag = next(stream)
         # get arguments
         args = []
         kwargs = []
@@ -214,7 +239,7 @@ class BaseExtension(ext.Extension):
             if args or kwargs:
                 stream.expect('comma')
             if stream.current.test('name') and stream.look().test('assign'):
-                key = nodes.Const(stream.next().value)
+                key = nodes.Const(next(stream).value)
                 stream.skip()
                 value = parser.parse_expression()
                 kwargs.append(nodes.Pair(key, value, lineno=key.lineno))
@@ -233,7 +258,8 @@ class BaseExtension(ext.Extension):
 class SnippetExtension(BaseExtension):
     ''' Custom snippet tag
 
-    {% snippet <template_name> [, <keyword>=<value>].. %}
+    {% snippet <template_name> [, <fallback_template_name>]...
+               [, <keyword>=<value>]... %}
 
     see lib.helpers.snippet() for more details.
     '''
@@ -242,8 +268,7 @@ class SnippetExtension(BaseExtension):
 
     @classmethod
     def _call(cls, args, kwargs):
-        assert len(args) == 1
-        return base.render_snippet(args[0], **kwargs)
+        return base.render_snippet(*args, **kwargs)
 
 class UrlForStaticExtension(BaseExtension):
     ''' Custom url_for_static tag for getting a path for static assets.
@@ -289,54 +314,19 @@ class LinkForExtension(BaseExtension):
     def _call(cls, args, kwargs):
         return h.nav_link(*args, **kwargs)
 
-class ResourceExtension(BaseExtension):
-    ''' Custom include_resource tag
+class AssetExtension(BaseExtension):
+    ''' Custom include_asset tag.
 
-    {% resource <resource_name> %}
+    {% asset <bundle_name> %}
 
-    see lib.helpers.include_resource() for more details.
+    see lib.webassets_tools.include_asset() for more details.
     '''
 
-    tags = set(['resource'])
+    tags = set(['asset'])
 
     @classmethod
     def _call(cls, args, kwargs):
         assert len(args) == 1
         assert len(kwargs) == 0
-        h.include_resource(args[0], **kwargs)
+        h.include_asset(args[0])
         return ''
-
-
-
-'''
-The following function is based on jinja2 code
-
-Provides a class that holds runtime and parsing time options.
-
-:copyright: (c) 2010 by the Jinja Team.
-:license: BSD, see LICENSE for more details.
-'''
-
-def jinja2_getattr(self, obj, attribute):
-    """Get an item or attribute of an object but prefer the attribute.
-    Unlike :meth:`getitem` the attribute *must* be a bytestring.
-
-    This is a customised version to work with properties
-    """
-    try:
-        value = getattr(obj, attribute)
-        if isinstance(value, property):
-            value = value.fget()
-        return value
-    except AttributeError:
-        pass
-    try:
-        value = obj[attribute]
-        if isinstance(value, property):
-            value = value.fget()
-        return value
-    except (TypeError, LookupError, AttributeError):
-        return self.undefined(obj=obj, name=attribute)
-
-setattr(Environment, 'get_attr', jinja2_getattr)
-del jinja2_getattr

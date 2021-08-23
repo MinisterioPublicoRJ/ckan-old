@@ -19,9 +19,9 @@ connection, the Solr server URL, etc. Sometimes it can be useful to define them 
 automate and orchestrate deployments without having to first modify the `CKAN configuration file`_.
 
 These options are only read at startup time to update the ``config`` object used by CKAN,
-but they won't we accessed any more during the lifetime of the application.
+but they won't be accessed any more during the lifetime of the application.
 
-CKAN environment variables names match the options in the configuration file, but they are always uppercase
+CKAN environment variable names match the options in the configuration file, but they are always uppercase
 and prefixed with `CKAN_` (this prefix is added even if
 the corresponding option in the ini file does not have it), and replacing dots with underscores.
 
@@ -46,10 +46,10 @@ CKAN configuration options are generally defined before starting the web applica
 
 A limited number of configuration options can also be edited during runtime. This can be done on the
 :ref:`administration interface <admin page>` or using the :py:func:`~ckan.logic.action.update.config_option_update`
-API action. Only :doc:`sysadmins </sysadmin-guide>` can edit these runtime-editable configuration options. Changes made to these configuration options will be stored on the database and persisted when the server is restarted.
+API action. Only :doc:`sysadmins </sysadmin-guide>` can edit these runtime-editable configuration options. Changes made to these configuration options will be stored in the database and persisted when the server is restarted.
 
 Extensions can add (or remove) configuration options to the ones that can be edited at runtime. For more
-details on how to this check :doc:`/extensions/remote-config-update`.
+details on how to do this check :doc:`/extensions/remote-config-update`.
 
 
 
@@ -58,10 +58,11 @@ details on how to this check :doc:`/extensions/remote-config-update`.
 CKAN configuration file
 ***********************
 
-By default, the
-configuration file is located at ``/etc/ckan/default/development.ini`` or
-``/etc/ckan/default/production.ini``. This section documents all of the config file
-settings, for reference.
+From CKAN 2.9, by default, the configuration file is located at
+``/etc/ckan/default/ckan.ini``. Previous releases the configuration file(s)
+were:  ``/etc/ckan/default/development.ini`` or
+``/etc/ckan/default/production.ini``. This section documents all of the config
+file settings, for reference.
 
 .. note:: After editing your config file, you need to restart your webserver
    for the changes to take effect.
@@ -103,12 +104,161 @@ Example::
 
 Default value: ``False``
 
-This enables Pylons' interactive debugging tool, makes Fanstatic serve unminified JS and CSS
-files, and enables CKAN templates' debugging features.
+This enables the `Flask-DebugToolbar
+<https://flask-debugtoolbar.readthedocs.io/>`_ in the web interface, makes
+Webassets serve unminified JS and CSS files, and enables CKAN templates'
+debugging features.
+
+You will need to ensure the ``Flask-DebugToolbar`` python package is installed,
+by activating your ckan virtual environment and then running::
+
+    pip install -r /usr/lib/ckan/default/src/ckan/dev-requirements.txt
+
+If you are running CKAN on Apache, you must change the WSGI
+configuration to run a single process of CKAN. Otherwise
+the execution will fail with: ``AssertionError: The EvalException
+middleware is not usable in a multi-process environment``. Eg. change::
+
+  WSGIDaemonProcess ckan_default display-name=ckan_default processes=2 threads=15
+  to
+  WSGIDaemonProcess ckan_default display-name=ckan_default threads=15
 
 .. warning:: This option should be set to ``False`` for a public site.
    With debug mode enabled, a visitor to your site could execute malicious
    commands.
+
+ckan.legacy_route_mappings
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+    ckan.legacy_route_mappings = {"home": "home.index", "about": "home.about",
+                                  "search": "dataset.search"}
+
+Default value: ``{"home": "home.index", "about": "home.about"}``
+
+This can be used when using an extension that is still using old (Pylons-based) route names to
+maintain compatibility.
+
+  .. warning:: This configuration will be removed when migration to Flask is completed. Please
+    update the extension code to use the new Flask-based route names.
+
+
+Development Settings
+--------------------
+
+.. _ckan.devserver.host:
+
+ckan.devserver.host
+^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.host = 0.0.0.0
+
+Default value: localhost
+
+Host name to use when running the development server.
+
+
+.. _ckan.devserver.port:
+
+ckan.devserver.port
+^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.port = 5005
+
+Default value: 5000
+
+Port to use when running the development server.
+
+
+.. _ckan.devserver.threaded:
+
+ckan.devserver.threaded
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.threaded = true
+
+Default value: False
+
+Controls whether the development server should handle each request in a separate
+thread.
+
+.. _ckan.devserver.multiprocess:
+
+ckan.devserver.multiprocess
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.multiprocess = 8
+
+Default value: 1
+
+If greater than 1 then the development server will handle each request in a new process, up to this
+maximum number of concurrent processes.
+
+.. _ckan.devserver.watch_patterns:
+
+ckan.devserver.watch_patterns
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.watch_patterns = mytheme/**/*.yaml mytheme/**/*.json
+
+Default value: None
+
+A list of files the reloader should watch to restart the development server, in addition to the
+Python modules (for example configuration files)
+
+.. _ckan.devserver.ssl_cert:
+
+ckan.devserver.ssl_cert
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.ssl_cert = path/to/host.cert
+
+Default value: None (SSL disabled)
+
+Path to a certificate file that will be used to enable SSL (ie to serve the
+local development server on https://localhost:5000). You can generate a
+self-signed certificate and key (see :ref:`ckan.devserver.ssl_key`) running
+the following commands::
+
+    openssl genrsa 2048 > host.key
+    chmod 400 host.key
+    openssl req -new -x509 -nodes -sha256 -days 3650 -key host.key > host.cert
+
+After that you can run CKAN locally with SSL using this command::
+
+    ckan -c /path/to/ckan.ini run --ssl-cert=/path/to/host.cert --ssl-key=/path/to/host.key
+
+Alternatively, setting this option to ``adhoc`` will automatically generate a new
+certificate file (on each server reload, which means that you'll get a browser warning
+about the certificate on each reload).
+
+.. _ckan.devserver.ssl_key:
+
+ckan.devserver.ssl_key
+^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.devserver.ssl_key = path/to/host.key
+
+Default value: None (SSL disabled)
+
+Path to a certificate file that will be used to enable SSL (ie to serve the
+local development server on https://localhost:5000). See :ref:`ckan.devserver.ssl_cert`
+for more details. This option also supports the ``adhoc`` value, with the same caveat.
 
 
 Repoze.who Settings
@@ -156,6 +306,21 @@ This determines whether the secure flag will be set for the repoze.who
 authorization cookie. If ``True``, the cookie will be sent over HTTPS. The
 default in the absence of the setting is ``False``.
 
+.. _who.samesite:
+
+who.samesite
+^^^^^^^^^^^^
+
+Example::
+
+ who.samesite = Strict
+
+Default value: Lax
+
+This determines whether the SameSite flag will be set for the repoze.who
+authorization cookie. Allowed values are ``Lax`` (the default one), ``Strict`` or ``None``.
+If set to ``None``,  ``who.secure`` must be set to ``True``.
+
 
 Database Settings
 -----------------
@@ -172,6 +337,25 @@ Example::
 This defines the database that CKAN is to use. The format is::
 
  sqlalchemy.url = postgres://USERNAME:PASSWORD@HOST/DBNAME
+
+.. _sqlalchemy.any:
+
+sqlalchemy.*
+^^^^^^^^^^^^
+
+Example::
+
+ sqlalchemy.pool_pre_ping=True
+ sqlalchemy.pool_size=10
+ sqlalchemy.max_overflow=20
+
+Custom sqlalchemy config parameters used to establish the main
+database connection.
+
+To get the list of all the available properties check the `SQLAlchemy documentation`_
+
+.. _SQLAlchemy documentation: http://docs.sqlalchemy.org/en/rel_0_9/core/engines.html#engine-creation-api
+
 
 .. start_config-datastore-urls
 
@@ -263,12 +447,79 @@ ckan.datastore.sqlsearch.enabled
 
 Example::
 
- ckan.datastore.sqlsearch.enabled = False
+ ckan.datastore.sqlsearch.enabled = True
 
-Default value:  ``True``
+Default value:  ``False``
 
-This option allows you to disable the datastore_search_sql action function, and
-corresponding API endpoint if you do not wish it to be activated.
+This option allows you to enable the :py:func:`~ckanext.datastore.logic.action.datastore_search_sql` action function, and corresponding API endpoint.
+
+This action function has protections from abuse including:
+
+- parsing of the query to prevent unsafe functions from being called, see :ref:`ckan.datastore.sqlsearch.allowed_functions_file`
+- parsing of the query to prevent multiple statements
+- prevention of data modification by using a read-only database role
+- use of ``explain`` to resolve tables accessed in the query to check against user permissions
+- use of a statement timeout to prevent queries from running indefinitely
+
+These protections offer some safety but are not designed to prevent all types of abuse. Depending on the sensitivity of private data in your datastore and the likelihood of abuse of your site you may choose to disable this action function or restrict its use with a :py:class:`~ckan.plugins.interfaces.IAuthFunctions` plugin.
+
+.. _ckan.datastore.search.rows_default:
+
+ckan.datastore.search.rows_default
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datastore.search.rows_default = 1000
+
+Default value:  ``100``
+
+Default number of rows returned by ``datastore_search``, unless the client
+specifies a different ``limit`` (up to ``ckan.datastore.search.rows_max``).
+
+NB this setting does not affect ``datastore_search_sql``.
+
+.. _ckan.datastore.search.rows_max:
+
+ckan.datastore.search.rows_max
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datastore.search.rows_max = 1000000
+
+Default value:  ``32000``
+
+Maximum allowed value for the number of rows returned by the datastore.
+
+Specifically this limits:
+
+* ``datastore_search``'s ``limit`` parameter.
+* ``datastore_search_sql`` queries have this limit inserted.
+
+.. _ckan.datastore.sqlsearch.allowed_functions_file:
+
+ckan.datastore.sqlsearch.allowed_functions_file
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datastore.sqlsearch.allowed_functions_file = /path/to/my_allowed_functions.txt
+
+Default value: File included in the source code at ``ckanext/datastore/allowed_functions.txt``.
+
+Allows to define the path to a text file listing the SQL functions that should be allowed to run
+on queries sent to the :py:func:`~ckanext.datastore.logic.action.datastore_search_sql` function
+(if enabled, see :ref:`ckan.datastore.sqlsearch.enabled`). Function names should be listed one on
+each line, eg::
+
+    abbrev
+    abs
+    abstime
+    ...
+
+
+
 
 Site Settings
 -------------
@@ -326,23 +577,6 @@ Default value: 0
 
 This sets ``Cache-Control`` header's max-age value.
 
-.. _ckan.page_cache_enabled:
-
-ckan.page_cache_enabled
-^^^^^^^^^^^^^^^^^^^^^^^
-
-Example::
-
-  ckan.page_cache_enabled = True
-
-Default value: ``False``
-
-This enables CKAN's built-in page caching.
-
-.. warning::
-
-   Page caching is an experimental feature.
-
 .. _ckan.cache_enabled:
 
 ckan.cache_enabled
@@ -352,9 +586,9 @@ Example::
 
   ckan.cache_enabled = True
 
-Default value: ``None``
+Default value: ``False``
 
-Controls if we're caching CKAN's static files, if it's serving them.
+This enables cache control headers on all requests. If the user is not logged in and there is no session data a ``Cache-Control: public`` header will be added. For all other requests the ``Cache-control: private`` header will be added.
 
 .. _ckan.use_pylons_response_cleanup_middleware:
 
@@ -575,12 +809,177 @@ Example::
 Default value: ``admin``
 
 
-Makes role permissions apply to all the groups down the hierarchy from the groups that the role is applied to.
+Makes role permissions apply to all the groups or organizations down the hierarchy from the groups or organizations that the role is applied to.
 
 e.g. a particular user has the 'admin' role for group 'Department of Health'. If you set the value of this option to 'admin' then the user will automatically have the same admin permissions for the child groups of 'Department of Health' such as 'Cancer Research' (and its children too and so on).
 
+
+.. _ckan.auth.public_user_details:
+
+ckan.auth.public_user_details
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.auth.public_user_details = False
+
+Default value: ``True``
+
+Restricts anonymous access to user information. If is set to ``False`` accessing users details when not logged in will raise a ``Not Authorized`` exception.
+
+.. note:: This setting should be used when user registration is disabled (``ckan.auth.create_user_via_web = False``), otherwise users
+    can just create an account to see other users details.
+
+
+.. _ckan.auth.public_activity_stream_detail:
+
+ckan.auth.public_activity_stream_detail
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.auth.public_activity_stream_detail = True
+
+Default value: ``False`` (however the default config file template sets it to ``True``)
+
+Restricts access to 'view this version' and 'changes' in the Activity Stream pages. These links provide users with the full edit history of datasets etc - what they showed in the past and the diffs between versions. If this option is set to ``False`` then only admins (e.g. whoever can edit the dataset) can see this detail. If set to ``True``, anyone can see this detail (assuming they have permission to view the dataset etc).
+
+
+.. _ckan.auth.allow_dataset_collaborators:
+
+ckan.auth.allow_dataset_collaborators
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.auth.allow_dataset_collaborators = True
+
+Default value: ``False``
+
+Enables or disable collaborators in individual datasets. If ``True``, in addition to the standard organization based permissions, users can be added as collaborators to individual datasets with different roles, regardless of the organization they belong to. For more information, check the documentation on :ref:`dataset_collaborators`.
+
+.. warning:: If this setting is turned off in a site where there already were collaborators created, you must reindex all datasets to update the permission labels, in order to prevent access to private datasets to the previous collaborators.
+
+.. _ckan.auth.allow_admin_collaborators:
+
+ckan.auth.allow_admin_collaborators
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.auth.allow_admin_collaborators = True
+
+Default value: ``False``
+
+
+Allows dataset collaborators to have the "Admin" role, allowing them to add more collaborators or remove existing ones. By default, collaborators can only be managed by administrators of the organization the dataset belongs to. For more information, check the documentation on :ref:`dataset_collaborators`.
+
+
+.. warning:: If this setting is turned off in a site where admin collaborators have been already created, existing collaborators with role "admin" will no longer be able to add or remove collaborators, but they will still be able to edit and access the datasets that they are assigned to.
+
+.. _ckan.auth.allow_collaborators_to_change_owner_org:
+
+ckan.auth.allow_collaborators_to_change_owner_org
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.auth.allow_collaborators_to_change_owner_org = True
+
+Default value: ``False``
+
+
+Allows dataset collaborators to change the owner organization of the datasets they are collaborators on. Defaults to False, meaning that collaborators with role admin or editor can edit the dataset metadata but not the organization field.
+
+.. _ckan.auth.create_default_api_keys:
+
+ckan.auth.create_default_api_keys
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.auth.create_default_api_keys = True
+
+Default value: ``False``
+
+
+Determines if a an API key should be automatically created for every user when creating a user account. If set to False (the default value), users can manually create an API token from their profile instead. See :ref:`api authentication`: for more details.
+
+
 .. end_config-authorization
 
+.. _config-api-tokens:
+
+API Token Settings
+------------------
+
+.. _api_token.nbytes:
+
+api_token.nbytes
+^^^^^^^^^^^^^^^^
+
+Example::
+
+  api_token.nbytes = 20
+
+Default value: 32
+
+Number of bytes used to generate unique id for API Token.
+
+.. _api_token.jwt.encode.secret:
+
+api_token.jwt.encode.secret
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  api_token.jwt.encode.secret = file:/path/to/private/key
+
+Default value: same as ``beaker.session.secret`` config option with ``string:`` type.
+
+A key suitable for the chosen algorithm(``api_token.jwt.algorithm``):
+
+* for asymmetric algorithms: path to private key with ``file:`` prefix. I.e ``file:/path/private/key``
+* for symmetric algorithms: plain string, sufficiently long for security with ``string:`` prefix. I.e ``string:123abc``
+
+Value must have prefix, which defines its type. Supported prefixes are:
+
+* ``string:`` - Plain string, will be used as is.
+* ``file:`` - Path to file. Content of the file will be used as key.
+
+.. _api_token.jwt.decode.secret:
+
+api_token.jwt.decode.secret
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  api_token.jwt.decode.secret = file:/path/to/public/key.pub
+
+Default value: same as ``beaker.session.secret`` config option with ``string:`` type.
+
+A key suitable for the chosen algorithm(``api_token.jwt.algorithm``):
+
+* for asymmetric algorithms: path to public key with ``file:`` prefix. I.e ``file:/path/public/key.pub``
+* for symmetric algorithms: plain string, sufficiently long for security with ``string:`` prefix. I.e ``string:123abc``
+
+Value must have prefix, which defines it's type. Supported prefixes are:
+
+* ``string:`` - Plain string, will be used as is.
+* ``file:`` - Path to file. Content of the file will be used as key.
+
+.. _api_token.jwt.algorithm:
+
+api_token.jwt.algorithm
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  api_token.jwt.algorithm = RS256
+
+Default value: ``HS256``
+
+Algorithm to sign the token with, e.g. "ES256", "RS256"
 
 Search Settings
 ---------------
@@ -619,6 +1018,17 @@ Optionally, ``solr_user`` and ``solr_password`` can also be configured to specif
 
 .. _ckan.search.automatic_indexing:
 
+solr_timeout
+^^^^^^^^^^^^
+
+Example::
+
+ solr_timeout = 120
+
+Default value:  ``60``
+
+The option defines the timeout in seconds until giving up on a request. Raising this value might help you if you encounter a timeout exception.
+
 ckan.search.automatic_indexing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -654,12 +1064,16 @@ ckan.search.show_all_types
 
 Example::
 
- ckan.search.show_all_types = true
+ ckan.search.show_all_types = dataset
 
 Default value:  ``false``
 
-Controls whether the default search page (``/dataset``) should show only
-standard datasets or also custom dataset types.
+Controls whether a search page (e.g. ``/dataset``) should also show
+custom dataset types. The default is ``false`` meaning that no search
+page for any type will show other types. ``true`` will show other types
+on the ``/dataset`` search page. Any other value (e.g. ``dataset`` or
+``document`` will be treated as a dataset type and that type's search
+page will show datasets of all types.
 
 .. _ckan.search.default_include_private:
 
@@ -668,13 +1082,28 @@ ckan.search.default_include_private
 
 Example::
 
- ckan.search.defalt_include_private = false
+ ckan.search.default_include_private = false
 
 Default value:  ``true``
 
 Controls whether the default search page (``/dataset``) should include
 private datasets visible to the current user or only public datasets
 visible to everyone.
+
+.. _ckan.search.default_package_sort:
+
+ckan.search.default_package_sort
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.search.default_package_sort = name asc
+
+Default value:  ``score desc, metadata_modified desc``
+
+Controls whether the default search page (``/dataset``) should different
+sorting parameter by default when the request does not specify sort.
+
 
 .. _search.facets.limit:
 
@@ -713,6 +1142,53 @@ Default value: ``None``
 
 List of the extra resource fields that would be used when searching.
 
+.. _ckan.search.rows_max:
+
+ckan.search.rows_max
+^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.search.rows_max = 1000
+
+Default value:  ``1000``
+
+Maximum allowed value for rows returned. Specifically this limits:
+
+* ``package_search``'s ``rows`` parameter
+* ``group_show`` and ``organization_show``'s number of datasets returned when specifying ``include_datasets=true``
+
+.. _ckan.group_and_organization_list_max:
+
+ckan.group_and_organization_list_max
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.group_and_organization_list_max = 1000
+
+Default value: ``1000``
+
+Maximum number of groups/organizations returned when listing them. Specifically this limits:
+
+* ``group_list``'s ``limit`` when ``all_fields=false``
+* ``organization_list``'s ``limit`` when ``all_fields=false``
+
+.. _ckan.group_and_organization_list_all_fields_max:
+
+ckan.group_and_organization_list_all_fields_max
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.group_and_organization_list_all_fields_max = 100
+
+Default value: ``25``
+
+Maximum number of groups/organizations returned when listing them in detail. Specifically this limits:
+
+* ``group_list``'s ``limit`` when ``all_fields=true``
+* ``organization_list``'s ``limit`` when ``all_fields=true``
 
 Redis Settings
 ---------------
@@ -1045,36 +1521,23 @@ web interface. ``dumps_format`` is just a string for display. Example::
 
   ckan.dumps_format = CSV/JSON
 
-.. _ckan.recaptcha.version:
-
-ckan.recaptcha.version
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-The version of Recaptcha to use, for example::
-
- ckan.recaptcha.version = 1
-
-Default Value: 1
-
-Valid options: 1, 2
-
 .. _ckan.recaptcha.publickey:
 
 ckan.recaptcha.publickey
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-The public key for your Recaptcha account, for example::
+The public key for your reCAPTCHA account, for example::
 
  ckan.recaptcha.publickey = 6Lc...-KLc
 
-To get a Recaptcha account, sign up at: http://www.google.com/recaptcha
+To get a reCAPTCHA account, sign up at: http://www.google.com/recaptcha
 
 .. _ckan.recaptcha.privatekey:
 
 ckan.recaptcha.privatekey
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The private key for your Recaptcha account, for example::
+The private key for your reCAPTCHA account, for example::
 
  ckan.recaptcha.privatekey = 6Lc...-jP
 
@@ -1113,6 +1576,20 @@ Defines a list of organization names or ids. This setting is used to display
 an organization and datasets on the home page in the default templates (1
 group and 2 datasets are displayed).
 
+.. _ckan.default_group_sort:
+
+ckan.default_group_sort
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.default_group_sort = name
+
+Default Value: 'title'
+
+Defines if some other sorting is used in group_list and organization_list
+by default when the request does not specify sort.
+
 .. _ckan.gravatar_default:
 
 ckan.gravatar_default
@@ -1120,11 +1597,13 @@ ckan.gravatar_default
 
 Example::
 
-  ckan.gravatar_default = monsterid
+  ckan.gravatar_default = disabled
 
 Default value: ``identicon``
 
-This controls the default gravatar avatar, in case the user has none.
+This controls the default gravatar style. Gravatar is used by default when a user has not set a custom profile picture,
+but it can be turn completely off by setting this option to "disabled". In that case, a placeholder image will be shown
+instead, which can be customized overriding the ``templates/user/snippets/placeholder.html`` template.
 
 .. _ckan.debug_supress_header:
 
@@ -1171,7 +1650,7 @@ default views are created.
 .. note:: You must have the relevant view plugins loaded on the ``ckan.plugins``
     setting to be able to create the default views, eg::
 
-        ckan.plugins = image_view webpage_view recline_grid_view ...
+        ckan.plugins = image_view webpage_view recline_grid_view datatables_view ...
 
         ckan.views.default_views = image_view webpage_view recline_grid_view
 
@@ -1208,9 +1687,9 @@ ckan.preview.text_formats
 
 Example::
 
- ckan.preview.text_formats = text plain
+ ckan.preview.text_formats = txt plain
 
-Default value: ``text plain text/plain``
+Default value: ``txt plain text/plain``
 
 Space-delimited list of plain text based resource formats that will be rendered by the Text view plugin (``text_view``)
 
@@ -1226,6 +1705,135 @@ Example::
 Default value: ``png jpeg jpg gif``
 
 Space-delimited list of image-based resource formats that will be rendered by the Image view plugin (``image_view``)
+
+
+.. _ckan.recline.dataproxy_url:
+
+ckan.recline.dataproxy_url
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.recline.dataproxy_url = https://mydataproxy.example.com
+
+Default value: ``//jsonpdataproxy.appspot.com``
+
+Custom URL to a self-hosted DataProxy instance. The DataProxy is an external service currently used to stream data in
+JSON format to the Recline-based views when data is not on the DataStore. The main instance is deprecated and will
+be eventually shut down, so users that require it can host an instance themselves and use this configuration option
+to point Recline to it.
+
+
+.. _ckan.datatables.page_length_choices:
+
+ckan.datatables.page_length_choices
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.page_length_choices = 20 50 100 500 1000 5000
+
+Default value: ``20 50 100 500 1000``
+
+Space-delimited list of the choices for the number of rows per page, with the lowest value being the default initial value.
+
+.. note:: On larger screens, DataTables view will attempt to fill the table with as many rows that can fit using the lowest closest choice.
+
+.. _ckan.datatables.state_saving:
+
+ckan.datatables.state_saving
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.state_saving = False
+
+Default value: ``True``
+
+Enable or disable state saving. When enabled, DataTables view will store state information such as pagination position,
+page length, row selection/s, column visibility/ordering, filtering and sorting using the browser's localStorage.
+When the end user reloads the page, the table's state will be altered to match what they had previously set up.
+
+This also enables/disables the "Reset" and "Share current view" buttons. "Reset" discards the saved state. "Share current view" base-64 encodes
+the state and passes it as a url parameter, acting like a "saved search" that can be used for embedding and sharing table searches.
+
+.. _ckan.datatables.state_duration:
+
+ckan.datatables.state_duration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.state_duration = 86400
+
+Default value: ``7200``
+
+Duration (in seconds) for which the saved state information is considered valid. After this period has elapsed, the table's state will
+be returned to the default, and the state cleared from the browser's localStorage.
+
+.. note:: The value ``0`` is a special value as it indicates that the state can be stored and retrieved indefinitely with no time limit.
+
+.. _ckan.datatables.data_dictionary_labels:
+
+ckan.datatables.data_dictionary_labels
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.data_dictionary_labels = True
+
+Default value: ``True``
+
+Enable or disable data dictionary integration. When enabled, a column's data dictionary label will be used in the table header. A tooltip for each
+column with data dictionary information will also be integrated into the header.
+
+.. _ckan.datatables.ellipsis_length:
+
+ckan.datatables.ellipsis_length
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.ellipsis_length = 100
+
+Default value: ``100``
+
+The maximum number of characters to show in a cell before it is truncated. An ellipsis (...) will be added at the truncation point and the
+full text of the cell will be available as a tooltip. This value can be overridden at the resource level when configuring a DataTables resource view.
+
+.. note:: The value ``0`` is a special value as it indicates that the column's width will be determined by the column name, and cell content will word-wrap.
+
+.. _ckan.datatables.date_format:
+
+ckan.datatables.date_format
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.date_format = YYYY-MM-DD dd ww
+
+Default value: ``llll``
+
+The `moment.js date format
+<https://momentjscom.readthedocs.io/en/latest/moment/04-displaying/01-format/>`_ to use to convert raw timestamps to a user-friendly date format using CKAN's current
+locale language code. This value can be overridden at the resource level when configuring a DataTables resource view.
+
+.. note:: The value ``NONE`` is a special value as it indicates that no date formatting will be applied and the raw ISO-8601 timestamp will be displayed.
+
+.. _ckan.datatables.default_view:
+
+ckan.datatables.default_view
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+ ckan.datatables.default_view = list
+
+Default value:  ``table``
+
+Indicates the default view mode of the DataTable (valid values: ``table`` or ``list``). Table view is the typical grid layout, with horizontal scrolling.
+List view is a responsive table, automatically hiding columns as required to fit the browser viewport. In addition, list view allows the user to view, copy and print
+the details of a specific row. This value can be overridden at the resource level when configuring a DataTables resource view.
 
 .. end_resource-views
 
@@ -1277,14 +1885,14 @@ Example (showing insertion of Google Analytics code)::
 
 .. note:: This is only for legacy code, and shouldn't be used anymore.
 
-.. _ckan.template_title_deliminater:
+.. _ckan.template_title_delimiter:
 
-ckan.template_title_deliminater
+ckan.template_title_delimiter
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Example::
 
- ckan.template_title_deliminater = |
+ ckan.template_title_delimiter = |
 
 Default value:  ``-``
 
@@ -1328,15 +1936,8 @@ Example::
 Default value:  ``public``
 
 This config option is used to configure the base folder for static files used
-by CKAN core. It's used to determine which version of Bootstrap to be used.
-It accepts two values: ``public`` (Bootstrap 3, the default value from CKAN
-2.8 onwards) and ``public-bs2`` (Bootstrap 2, used until CKAN 2.7).
-
-It must be used in conjunction with :ref:`ckan.base_templates_folder` in order
-for it to properly function. Also, you can't use for example Bootstrap 3 for
-static files and Bootstrap 2 for templates or vice versa.
-
-.. note:: Starting with CKAN 2.8, Bootstrap 3 will be used as a default.
+by CKAN core. It is currently unused and it only accepts one value: ``public``
+(Bootstrap 3, the default value from CKAN 2.8 onwards).
 
 .. _ckan.base_templates_folder:
 
@@ -1350,15 +1951,8 @@ Example::
 Default value:  ``templates``
 
 This config option is used to configure the base folder for templates used
-by CKAN core. It's used to determine which version of Bootstrap to be used.
-It accepts two values: ``templates`` (Bootstrap 3, the default value from CKAN
-2.8 onwards) and ``templates-bs2`` (Bootstrap 2, used until CKAN 2.7).
-
-It must be used in conjunction with :ref:`ckan.base_public_folder` in order
-for it to properly function. Also, you can't use for example Bootstrap 3 for
-templates and Bootstrap 2 for static files or vice versa.
-
-.. note:: Starting with CKAN 2.8, Bootstrap 3 will be used as a default.
+by CKAN core. It is currently unused and it only accepts one vaue: ``templates``
+(Bootstrap 3, the default value from CKAN 2.8 onwards).
 
 .. end_config-theming
 
@@ -1401,38 +1995,41 @@ Default value: ``2``
 
 The maximum in megabytes an image upload can be.
 
-.. _ofs.impl:
 
-ofs.impl
-^^^^^^^^
+Webassets Settings
+------------------
 
-Example::
+.. _ckan.webassets.path:
 
-  ofs.impl = pairtree
-
-Default value:  ``None``
-
-Defines the storage backend used by CKAN: ``pairtree`` for local storage, ``s3`` for Amazon S3 Cloud Storage or ``google`` for Google Cloud Storage. Note that each of these must be accompanied by the relevant settings for each backend described below.
-
-Deprecated, only available option is now pairtree.  This must be used nonetheless if upgrading for CKAN 2.1 in order to keep access to your old pairtree files.
-
-
-.. _ofs.storage_dir:
-
-ofs.storage_dir
-^^^^^^^^^^^^^^^
+ckan.webassets.path
+^^^^^^^^^^^^^^^^^^^
 
 Example::
 
-  ofs.storage_dir = /data/uploads/
+  ckan.webassets.path = /var/lib/ckan/webassets
 
-Default value:  ``None``
+Default value: ``webassets`` folder under the path specified by the
+:ref:`ckan.storage_path` option.
 
-Only used with the local storage backend. Use this to specify where uploaded files should be stored, and also to turn on the handling of file storage. The folder should exist, and will automatically be turned into a valid pairtree repository if it is not already.
+In order to increase performance, static assets (CSS and JS files) included via an ``asset`` tag inside templates are compiled only once,
+when the asset is used for the first time. All subsequent requests to the
+asset will use the existing file. CKAN stores the compiled webassets in the file system, in the path specified by this config option.
 
-Deprecated, please use ckan.storage_path.  This must be used nonetheless if upgrading for CKAN 2.1 in order to keep access to your old pairtree files.
 
+.. _ckan.webassets.use_x_sendfile:
 
+ckan.webassets.use_x_sendfile
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.webassets.use_x_sendfile = true
+
+Default value: ``false``
+
+When serving static files, if this setting is ``True``, the applicatin will set the ``X-Sendfile`` header instead of
+serving the files directly with Flask. This will increase performance when serving the assets, but it
+requires that the web server (eg Nginx) supports the ``X-Sendfile`` header. See :ref:`x-sendfile` for more information.
 
 
 DataPusher Settings
@@ -1469,6 +2066,22 @@ running on port 8800. If you want to manually install the DataPusher, follow
 the installation `instructions <http://docs.ckan.org/projects/datapusher>`_.
 
 
+.. _ckan.datapusher.callback_url_base:
+
+ckan.datapusher.callback_url_base
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.datapusher.callback_url_base = http://ckan:5000/
+
+Default value: Value of ``ckan.site_url``
+
+Alternative callback URL for DataPusher when performing a request to CKAN. This is
+useful on scenarios where the host where DataPusher is running can not access the
+public CKAN site URL.
+
+
 .. _ckan.datapusher.assume_task_stale_after:
 
 ckan.datapusher.assume_task_stale_after
@@ -1501,6 +2114,19 @@ Default value: ``20``
 
 This controls the number of users to show in the Users list. By default, it shows 20 users.
 
+.. _ckan.user_reset_landing_page:
+
+ckan.user_reset_landing_page
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.user_reset_landing_page = dataset
+
+Default value: ``home.index``
+
+This controls the page where users will be sent after requesting a password reset.
+This is ordinarily the home page, but specific sites may prefer somewhere else.
 
 Activity Streams Settings
 -------------------------
@@ -1541,10 +2167,22 @@ Example::
 
   ckan.activity_list_limit = 31
 
-Default value: ``infinite``
+Default value: ``31``
 
-This controls the number of activities to show in the Activity Stream. By default, it shows everything.
+This controls the number of activities to show in the Activity Stream.
 
+.. _ckan.activity_list_limit_max:
+
+ckan.activity_list_limit_max
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.activity_list_limit_max = 100
+
+Default value: ``100``
+
+Maximum allowed value for Activity Stream ``limit`` parameter.
 
 .. _ckan.email_notifications_since:
 
@@ -1751,6 +2389,33 @@ If you have set an extra i18n directory using ``ckan.i18n.extra_directory``, you
 should specify the locales that have been translated in that directory in this
 option.
 
+.. _ckan.i18n.rtl_languages:
+
+ckan.i18n.rtl_languages
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.i18n.rtl_languages = he ar fa_IR
+
+Default value: ``he ar fa_IR``
+
+Allows to modify the right-to-left languages
+
+.. _ckan.i18n.rtl_css:
+
+ckan.i18n.rtl_css
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+
+  ckan.i18n.rtl_css = /base/css/my-custom-rtl.css
+
+Default value: ``/base/css/rtl.css``
+
+Allows to override the default rtl css file used for the languages defined
+in ``ckan.i18n.rtl_languages``.
+
 .. _ckan.display_timezone:
 
 ckan.display_timezone
@@ -1798,6 +2463,10 @@ This setting is used to construct URLs inside CKAN. It specifies two things:
 
     The host of your CKAN installation can be set via :ref:`ckan.site_url`.
 
+The CKAN repoze config file ``who.ini`` file will also need to be edited
+by adding the path prefix to the options in the ``[plugin:friendlyform]``
+section: ``login_form_url``, ``post_login_url`` and ``post_logout_url``.
+Do not change the login/logout_handler_path options.
 
 .. _ckan.resource_formats:
 
@@ -1823,6 +2492,19 @@ example.
 
 Form Settings
 -------------
+
+.. ckan.dataset.create_on_ui_requires_resources
+
+ckan.dataset.create_on_ui_requires_resources
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Example::
+    ckan.dataset.create_on_ui_requires_resources = False
+
+Default value: True
+
+If False, there is no need to add any resources when creating a new dataset.
+
 
 .. _package_new_return_url:
 
@@ -1946,6 +2628,21 @@ Default value: ``None``
 
 The email address that emails sent by CKAN will come from. Note that, if left blank, the
 SMTP server may insert its own.
+
+.. _smtp.reply_to:
+
+smtp.reply_to
+^^^^^^^^^^^^^
+
+Example::
+
+  smtp.mail_from = noreply.example.com
+
+Default value: ``None``
+
+The email address that will be used if someone attempts to reply to a system email.
+If left blank, no ``Reply-to`` will be added to the email and the value of
+``smtp.mail_from`` will be used.
 
 .. _email_to:
 

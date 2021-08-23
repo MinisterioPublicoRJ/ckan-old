@@ -6,37 +6,18 @@ Testing coding standards
 before being merged into master**. This document gives some guidelines for
 developers who are writing tests or reviewing code for CKAN.
 
+.. seealso::
 
---------------------------------------
-Transitioning from legacy to new tests
---------------------------------------
+   :doc:`Testing CKAN <test>`
+     How to set up your development environment to run CKAN's test suite
 
-CKAN is an old code base with a large legacy test suite in
-:mod:`ckan.tests.legacy`. The legacy tests are difficult to maintain and
-extend, but are too many to be replaced all at once in a single effort.  So
-we're following this strategy:
-
-#. A new test suite has been started in :mod:`ckan.tests`.
-#. For now, we'll run both the legacy tests and the new tests before
-   merging something into the master branch.
-#. Whenever we add new code, or change existing code, we'll add new-style tests
-   for it.
-#. If you change the behavior of some code and break some legacy tests,
-   consider adding new tests for that code and deleting the legacy tests,
-   rather than updating the legacy tests.
-#. Now and then, we'll write a set of new tests to cover part of the code,
-   and delete the relevant legacy tests. For example if you want to refactor
-   some code that doesn't have good tests, write a set of new-style tests for
-   it first, refactor, then delete the relevant legacy tests.
-
-In this way we can incrementally extend the new tests to cover CKAN one "island
-of code" at a time, and eventually we can delete the legacy :mod:`ckan.tests`
-directory entirely.
+   :ref:`background jobs testing`
+     How to handle asynchronous background jobs in your tests
 
 
---------------------------------------
-Guidelines for writing new-style tests
---------------------------------------
+----------------------------
+Guidelines for writing tests
+----------------------------
 
 We want the tests in :mod:`ckan.tests` to be:
 
@@ -45,12 +26,12 @@ Fast
     ``setup_class()`` methods, saved against the ``self`` attribute of test
     classes, or in test helper modules).
 
-    Instead write helper functions that create test objects and return them,
-    and have each test method call just the helpers it needs to do the setup
-    that it needs.
+    Instead use fixtures that create test objects and pass them as parameters, and
+    inject into every method only the required fixtures.
 
-  * Where appropriate, use the ``mock`` library to avoid pulling in other parts
-    of CKAN (especially the database), see :ref:`mock`.
+  * Where appropriate, use the ``monkeypatch`` `fixture
+    <https://docs.pytest.org/en/latest/monkeypatch.html>`_ to avoid
+    pulling in other parts of CKAN (especially the database).
 
 Independent
   * Each test module, class and method should be able to be run on its own.
@@ -67,7 +48,7 @@ Clear
   You shouldn't have to figure out what a complex test method does, or go and
   look up a lot of code in other files to understand a test method.
 
-  * Tests should follow the canonical form for a unit test, see
+  * Tests should follow the canonical form for a pytest, see
     :ref:`test recipe`.
 
   * Write lots of small, simple test methods not a few big, complex tests.
@@ -209,24 +190,6 @@ function test demonstrating the recipe:
    :start-after: # START-AFTER
    :end-before: # END-BEFORE
 
-One common exception is when you want to use a ``for`` loop to call the
-function being tested multiple times, passing it lots of different arguments
-that should all produce the same return value and/or side effects. For example,
-this test from :py:mod:`ckan.tests.logic.action.test_update`:
-
-.. literalinclude:: /../ckan/tests/logic/action/test_update.py
-   :start-after: # START-FOR-LOOP-EXAMPLE
-   :end-before: # END-FOR-LOOP-EXAMPLE
-
-The behavior of :py:func:`~ckan.logic.action.update.user_update` is the same
-for every invalid value.
-We do want to test :py:func:`~ckan.logic.action.update.user_update` with lots
-of different invalid names, but we obviously don't want to write a dozen
-separate test methods that are all the same apart from the value used for the
-invalid user name. We don't really want to define a helper method and a dozen
-test methods that call it either. So we use a simple loop. Technically this
-test calls the function being tested more than once, but there's only one line
-of code that calls it.
 
 
 How detailed should tests be?
@@ -276,6 +239,14 @@ Test helper functions: :mod:`ckan.tests.helpers`
    :members:
 
 
+.. _fixtures:
+
+Pytest fixtures
+---------------
+
+.. automodule:: ckan.tests.pytest_ckan.fixtures
+   :members:
+
 .. _mock:
 
 Mocking: the ``mock`` library
@@ -319,7 +290,7 @@ code will always get another mock object back:
 
 .. code-block:: python
 
-    >>> import mock
+    >>> import unittest.mock as mock
     >>> my_mock = mock.MagicMock()
     >>> my_mock.foo
     <MagicMock name='mock.foo' id='56032400'>
@@ -444,12 +415,6 @@ Writing :mod:`ckan.plugins` tests
 ---------------------------------
 
 .. automodule:: ckan.tests.plugins
-
-
-Writing :mod:`ckan.migration` tests
------------------------------------
-
-.. automodule:: ckan.tests.migration
 
 
 Writing :mod:`ckan.ckanext` tests

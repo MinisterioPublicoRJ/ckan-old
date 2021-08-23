@@ -2,10 +2,10 @@
 
 import logging
 
+from six import string_types
 
 import ckan.plugins as p
 import ckan.logic as logic
-import ckan.model as model
 from ckan.model.core import State
 
 import ckanext.datastore.helpers as datastore_helpers
@@ -18,6 +18,7 @@ from ckanext.datastore.backend import (
     DatastoreBackend
 )
 from ckanext.datastore.backend.postgres import DatastorePostgresqlBackend
+import ckanext.datastore.blueprint as view
 
 log = logging.getLogger(__name__)
 _get_or_bust = logic.get_or_bust
@@ -32,16 +33,14 @@ class DatastorePlugin(p.SingletonPlugin):
     p.implements(p.IConfigurer)
     p.implements(p.IActions)
     p.implements(p.IAuthFunctions)
-    p.implements(p.IResourceUrlChange)
-    p.implements(p.IDomainObjectModification, inherit=True)
     p.implements(p.IRoutes, inherit=True)
     p.implements(p.IResourceController, inherit=True)
     p.implements(p.ITemplateHelpers)
     p.implements(p.IForkObserver, inherit=True)
     p.implements(interfaces.IDatastore, inherit=True)
     p.implements(interfaces.IDatastoreBackend, inherit=True)
+    p.implements(p.IBlueprint)
 
-    legacy_mode = False
     resource_show_action = None
 
     def __new__(cls, *args, **kwargs):
@@ -81,34 +80,6 @@ class DatastorePlugin(p.SingletonPlugin):
         self.config = config
         self.backend.configure(config)
 
-        # Legacy mode means that we have no read url. Consequently sql search
-        # is not available and permissions do not have to be changed. In
-        # legacy mode, the datastore runs on PG prior to 9.0 (for
-        # example 8.4).
-        if hasattr(self.backend, 'is_legacy_mode'):
-            self.legacy_mode = self.backend.is_legacy_mode(self.config)
-
-    # IDomainObjectModification
-    # IResourceUrlChange
-
-    def notify(self, entity, operation=None):
-        if not isinstance(entity, model.Package) or self.legacy_mode:
-            return
-        # if a resource is new, it cannot have a datastore resource, yet
-        if operation == model.domain_object.DomainObjectOperation.changed:
-            context = {'model': model, 'ignore_auth': True}
-            if entity.private:
-                func = p.toolkit.get_action('datastore_make_private')
-            else:
-                func = p.toolkit.get_action('datastore_make_public')
-            for resource in entity.resources:
-                try:
-                    func(context, {
-                        'connection_url': self.backend.write_url,
-                        'resource_id': resource.id})
-                except p.toolkit.ObjectNotFound:
-                    pass
-
     # IActions
 
     def get_actions(self):
@@ -122,15 +93,11 @@ class DatastorePlugin(p.SingletonPlugin):
             'datastore_function_delete': action.datastore_function_delete,
             'datastore_run_triggers': action.datastore_run_triggers,
         }
-        if not self.legacy_mode:
-            if getattr(self.backend, 'enable_sql_search', False):
-                # Only enable search_sql if the config does not disable it
-                actions.update({
-                    'datastore_search_sql': action.datastore_search_sql,
-                })
+        if getattr(self.backend, 'enable_sql_search', False):
+            # Only enable search_sql if the config/backend does not disable it
             actions.update({
-                'datastore_make_private': action.datastore_make_private,
-                'datastore_make_public': action.datastore_make_public})
+                'datastore_search_sql': action.datastore_search_sql,
+            })
         return actions
 
     # IAuthFunctions
@@ -149,19 +116,6 @@ class DatastorePlugin(p.SingletonPlugin):
             'datastore_run_triggers': auth.datastore_run_triggers,
         }
 
-    # IRoutes
-
-    def before_map(self, m):
-        m.connect(
-            '/datastore/dump/{resource_id}',
-            controller='ckanext.datastore.controller:DatastoreController',
-            action='dump')
-        m.connect(
-            'resource_dictionary', '/dataset/{id}/dictionary/{resource_id}',
-            controller='ckanext.datastore.controller:DatastoreController',
-            action='dictionary', ckan_icon='book')
-        return m
-
     # IResourceController
 
     def before_show(self, resource_dict):
@@ -169,8 +123,7 @@ class DatastorePlugin(p.SingletonPlugin):
         # they link to the datastore dumps.
         if resource_dict.get('url_type') == 'datastore':
             resource_dict['url'] = p.toolkit.url_for(
-                controller='ckanext.datastore.controller:DatastoreController',
-                action='dump', resource_id=resource_dict['id'],
+                'datastore.dump', resource_id=resource_dict['id'],
                 qualified=True)
 
         if 'datastore_active' not in resource_dict:
@@ -191,38 +144,43 @@ class DatastorePlugin(p.SingletonPlugin):
             if res.extras.get('datastore_active') is True]
 
         for res in deleted:
-            self.backend.delete(context, {
-                'resource_id': res.id,
-            })
+            if self.backend.resource_exists(res.id):
+                self.backend.delete(context, {
+                    'resource_id': res.id,
+                })
             res.extras['datastore_active'] = False
-            res_query.update(
+            res_query.filter_by(id=res.id).update(
                 {'extras': res.extras}, synchronize_session=False)
 
     # IDatastore
 
     def datastore_validate(self, context, data_dict, fields_types):
-        column_names = fields_types.keys()
-        fields = data_dict.get('fields')
-        if fields:
-            data_dict['fields'] = list(set(fields) - set(column_names))
+        column_names = list(fields_types.keys())
 
         filters = data_dict.get('filters', {})
-        for key in filters.keys():
+        for key in list(filters.keys()):
             if key in fields_types:
                 del filters[key]
 
         q = data_dict.get('q')
         if q:
-            if isinstance(q, basestring):
+            if isinstance(q, string_types):
                 del data_dict['q']
+                column_names.append(u'rank')
             elif isinstance(q, dict):
-                for key in q.keys():
-                    if key in fields_types and isinstance(q[key], basestring):
+                for key in list(q.keys()):
+                    if key in fields_types and isinstance(q[key],
+                                                          string_types):
+                        column_names.append(u'rank ' + key)
                         del q[key]
+
+        fields = data_dict.get('fields')
+        if fields:
+            data_dict['fields'] = list(set(fields) - set(column_names))
 
         language = data_dict.get('language')
         if language:
-            if isinstance(language, basestring):
+            if isinstance(language, string_types):
                 del data_dict['language']
 
         plain = data_dict.get('plain')
@@ -249,7 +207,7 @@ class DatastorePlugin(p.SingletonPlugin):
         if limit:
             is_positive_int = datastore_helpers.validate_int(limit,
                                                              non_negative=True)
-            is_all = isinstance(limit, basestring) and limit.lower() == 'all'
+            is_all = isinstance(limit, string_types) and limit.lower() == 'all'
             if is_positive_int or is_all:
                 del data_dict['limit']
 
@@ -259,6 +217,11 @@ class DatastorePlugin(p.SingletonPlugin):
                                                              non_negative=True)
             if is_positive_int:
                 del data_dict['offset']
+
+        full_text = data_dict.get('full_text')
+        if full_text:
+            if isinstance(full_text, string_types):
+                del data_dict['full_text']
 
         return data_dict
 
@@ -287,3 +250,10 @@ class DatastorePlugin(p.SingletonPlugin):
             pass
         else:
             before_fork()
+
+    # IBlueprint
+
+    def get_blueprint(self):
+        u'''Return a Flask Blueprint object to be registered by the app.'''
+
+        return view.datastore

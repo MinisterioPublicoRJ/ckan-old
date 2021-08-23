@@ -3,10 +3,13 @@
 import json
 import logging
 
-import paste.deploy.converters as converters
+import ckan.common as converters
 import sqlparse
+import six
 
-from ckan.plugins.toolkit import get_action, ObjectNotFound, NotAuthorized
+from six import string_types
+
+import ckan.plugins.toolkit as tk
 
 log = logging.getLogger(__name__)
 
@@ -57,63 +60,133 @@ def validate_int(i, non_negative=False):
     return i >= 0 or not non_negative
 
 
-def _strip(input):
-    if isinstance(input, basestring) and len(input) and input[0] == input[-1]:
-        return input.strip().strip('"')
-    return input
+def _strip(s):
+    if isinstance(s, string_types) and len(s) and s[0] == s[-1]:
+        return s.strip().strip('"')
+    return s
 
 
 def should_fts_index_field_type(field_type):
     return field_type.lower() in ['tsvector', 'text', 'number']
 
 
-def get_table_names_from_sql(context, sql):
-    '''Parses the output of EXPLAIN (FORMAT JSON) looking for table names
+def get_table_and_function_names_from_sql(context, sql):
+    '''Parses the output of EXPLAIN (FORMAT JSON) looking for table and
+    function names
 
     It performs an EXPLAIN query against the provided SQL, and parses
-    the output recusively looking for "Relation Name".
+    the output recusively.
 
     Note that this requires Postgres 9.x.
 
     :param context: a CKAN context dict. It must contain a 'connection' key
         with the current DB connection.
     :type context: dict
-    :param sql: the SQL statement to parse for table names
+    :param sql: the SQL statement to parse for table and function names
     :type sql: string
 
-    :rtype: list of strings
+    :rtype: a tuple with two list of strings, one for table and one for
+    function names
     '''
 
-    def _get_table_names_from_plan(plan):
+    queries = [sql]
+    table_names = []
+    function_names = []
 
-        table_names = []
+    while queries:
+        sql = queries.pop()
 
-        if plan.get('Relation Name'):
-            table_names.append(plan['Relation Name'])
+        function_names.extend(_get_function_names_from_sql(sql))
 
-        if 'Plans' in plan:
-            for child_plan in plan['Plans']:
-                table_name = _get_table_names_from_plan(child_plan)
-                if table_name:
-                    table_names.extend(table_name)
+        result = context['connection'].execute(
+            'EXPLAIN (VERBOSE, FORMAT JSON) {0}'.format(
+                six.ensure_str(sql))).fetchone()
 
-        return table_names
+        try:
+            query_plan = json.loads(result['QUERY PLAN'])
+            plan = query_plan[0]['Plan']
 
-    result = context['connection'].execute(
-        'EXPLAIN (FORMAT JSON) {0}'.format(sql.encode('utf-8'))).fetchone()
+            t, q, f = _parse_query_plan(plan)
+            table_names.extend(t)
+            queries.extend(q)
+
+            function_names = list(set(function_names) | set(f))
+
+        except ValueError:
+            log.error('Could not parse query plan')
+            raise
+
+    return table_names, function_names
+
+
+def _parse_query_plan(plan):
+    '''
+    Given a Postgres Query Plan object (parsed from the output of an EXPLAIN
+    query), returns a tuple with three items:
+
+    * A list of tables involved
+    * A list of remaining queries to parse
+    * A list of function names involved
+    '''
 
     table_names = []
+    queries = []
+    functions = []
 
-    try:
-        query_plan = json.loads(result['QUERY PLAN'])
-        plan = query_plan[0]['Plan']
+    if plan.get('Relation Name'):
+        table_names.append(plan['Relation Name'])
+    if 'Function Name' in plan:
+        if plan['Function Name'].startswith(
+                'crosstab'):
+            try:
+                queries.append(_get_subquery_from_crosstab_call(
+                    plan['Function Call']))
+            except ValueError:
+                table_names.append('_unknown_crosstab_sql')
+        else:
+            functions.append(plan['Function Name'])
 
-        table_names.extend(_get_table_names_from_plan(plan))
+    if 'Plans' in plan:
+        for child_plan in plan['Plans']:
+            t, q, f = _parse_query_plan(child_plan)
+            table_names.extend(t)
+            queries.extend(q)
+            functions.extend(f)
 
-    except ValueError:
-        log.error('Could not parse query plan')
+    return table_names, queries, functions
 
-    return table_names
+
+def _get_function_names_from_sql(sql):
+    function_names = []
+
+    def _get_function_names(tokens):
+        for token in tokens:
+            if isinstance(token, sqlparse.sql.Function):
+                function_name = token.get_name()
+                if function_name not in function_names:
+                    function_names.append(function_name)
+            if hasattr(token, 'tokens'):
+                _get_function_names(token.tokens)
+
+    parsed = sqlparse.parse(sql)[0]
+    _get_function_names(parsed.tokens)
+
+    return function_names
+
+
+def _get_subquery_from_crosstab_call(ct):
+    """
+    Crosstabs are a useful feature some sites choose to enable on
+    their datastore databases. To support the sql parameter passed
+    safely we accept only the simple crosstab(text) form where text
+    is a literal SQL string, otherwise raise ValueError
+    """
+    if not ct.startswith("crosstab('") or not ct.endswith("'::text)"):
+        raise ValueError('only simple crosstab calls supported')
+    ct = ct[10:-8]
+    if "'" in ct.replace("''", ""):
+        raise ValueError('only escaped single quotes allowed in query')
+    return ct.replace("''", "'")
 
 
 def datastore_dictionary(resource_id):
@@ -122,11 +195,11 @@ def datastore_dictionary(resource_id):
     """
     try:
         return [
-            f for f in get_action('datastore_search')(
+            f for f in tk.get_action('datastore_search')(
                 None, {
                     u'resource_id': resource_id,
                     u'limit': 0,
                     u'include_total': False})['fields']
             if not f['id'].startswith(u'_')]
-    except (ObjectNotFound, NotAuthorized):
+    except (tk.ObjectNotFound, tk.NotAuthorized):
         return []

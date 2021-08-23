@@ -11,7 +11,7 @@ set -e
 # URL for datapusher (required unless linked to a container called 'datapusher')
 : ${CKAN_DATAPUSHER_URL:=}
 
-CONFIG="${CKAN_CONFIG}/ckan.ini"
+CONFIG="${CKAN_CONFIG}/production.ini"
 
 abort () {
   echo "$@" >&2
@@ -33,11 +33,18 @@ set_environment () {
   export CKAN_SMTP_USER=${CKAN_SMTP_USER}
   export CKAN_SMTP_PASSWORD=${CKAN_SMTP_PASSWORD}
   export CKAN_SMTP_MAIL_FROM=${CKAN_SMTP_MAIL_FROM}
+  export CKAN_MAX_UPLOAD_SIZE_MB=${CKAN_MAX_UPLOAD_SIZE_MB}
 }
 
 write_config () {
-  ckan-paster make-config --no-interactive ckan "$CONFIG"
+  echo "Generating config at ${CONFIG}..."
+  ckan generate config "$CONFIG"
 }
+
+# Wait for PostgreSQL
+while ! pg_isready -h db -U ckan; do
+  sleep 1;
+done
 
 # If we don't already have a config file, bootstrap
 if [ ! -e "$CONFIG" ]; then
@@ -62,6 +69,5 @@ if [ -z "$CKAN_DATAPUSHER_URL" ]; then
 fi
 
 set_environment
-ckan-paster --plugin=ckan db init -c "${CKAN_CONFIG}/ckan.ini"
+ckan --config "$CONFIG" db init
 exec "$@"
-

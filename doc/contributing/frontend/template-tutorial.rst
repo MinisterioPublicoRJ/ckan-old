@@ -74,32 +74,25 @@ it is useful to provide additional actions that a related to the page.
 ::
 
     {% block breadcrumb_content %}
-      <li class="active">{% link_for _('Viewing Dataset'), controller='package', action='read', id=pkg.id %}</li>
+      <li class="active">{% link_for _('Viewing Dataset'), named_route=pkg.type ~ '.read', id=pkg.id %}</li>
     {% endblock %}
 
     {% block actions_content %}
       {{ super() }}
-      <li class="active">{% link_for _('New Dataset'), controller='package', action='new', class_='btn', icon='plus' %}</li>
+      <li class="active">{% link_for _('New Dataset'), named_route='dataset.new', class_='btn', icon='plus' %}</li>
     {% endblock %}
 
 Scripts and Stylesheets
 -----------------------
 
-Currently scripts and stylesheets can be added by extending the
-``styles`` and ``scripts`` blocks. This is soon to be replaced with the
-``{% resource %}`` tag which manages script loading for us.
+Currently scripts and stylesheets can be added by using the
+``{% asset %}`` tag which manages script loading for us.
 
 ::
 
-    {% block styles %}
-      {{ super() }}
-      <link rel="stylesheet" href="{% url_for_static "my-style.css" %}" />
-    {% endblock %}
+{% asset 'my-extension/main-css' %}
+{% asset 'my-extension/main-js' %}
 
-    {% block scripts %}
-      {{ super() }}
-      <script src="{% url_for_static "my-script.js" %}"></script>
-    {% endblock %}
 
 Summary
 -------

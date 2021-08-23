@@ -4,24 +4,24 @@
 import os
 import logging
 import warnings
-from urlparse import urlparse
 import pytz
 
+import six
 import sqlalchemy
-from pylons import config as pylons_config
-import formencode
 
-import ckan.config.routing as routing
+from six.moves.urllib.parse import urlparse
+
 import ckan.model as model
 import ckan.plugins as p
+import ckan.lib.plugins as lib_plugins
 import ckan.lib.helpers as helpers
 import ckan.lib.app_globals as app_globals
 from ckan.lib.redis import is_redis_available
-import ckan.lib.render as render
 import ckan.lib.search as search
 import ckan.logic as logic
 import ckan.authz as authz
 import ckan.lib.jinja_extensions as jinja_extensions
+from ckan.lib.webassets_tools import webassets_init
 from ckan.lib.i18n import build_js_translations
 
 from ckan.common import _, ungettext, config
@@ -29,55 +29,28 @@ from ckan.exceptions import CkanConfigurationException
 
 log = logging.getLogger(__name__)
 
-
 # Suppress benign warning 'Unbuilt egg for setuptools'
 warnings.simplefilter('ignore', UserWarning)
 
 
-def load_environment(global_conf, app_conf):
+def load_environment(conf):
     """
     Configure the Pylons environment via the ``pylons.config`` object. This
     code should only need to be run once.
     """
-    # this must be run at a time when the env is semi-setup, thus inlined here.
-    # Required by the deliverance plugin and iATI
-    from pylons.wsgiapp import PylonsApp
-    import pkg_resources
-    find_controller_generic = PylonsApp.find_controller
-
-    # This is from pylons 1.0 source, will monkey-patch into 0.9.7
-    def find_controller(self, controller):
-        if controller in self.controller_classes:
-            return self.controller_classes[controller]
-        # Check to see if its a dotted name
-        if '.' in controller or ':' in controller:
-            ep = pkg_resources.EntryPoint.parse('x={0}'.format(controller))
-
-            if hasattr(ep, 'resolve'):
-                # setuptools >= 10.2
-                mycontroller = ep.resolve()
-            else:
-                # setuptools >= 11.3
-                mycontroller = ep.load(False)
-
-            self.controller_classes[controller] = mycontroller
-            return mycontroller
-        return find_controller_generic(self, controller)
-    PylonsApp.find_controller = find_controller
-
-    os.environ['CKAN_CONFIG'] = global_conf['__file__']
+    os.environ['CKAN_CONFIG'] = conf['__file__']
 
     # Pylons paths
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    valid_base_public_folder_names = ['public', 'public-bs2']
-    static_files = app_conf.get('ckan.base_public_folder', 'public')
-    app_conf['ckan.base_public_folder'] = static_files
+    valid_base_public_folder_names = ['public']
+    static_files = conf.get('ckan.base_public_folder', 'public')
+    conf['ckan.base_public_folder'] = static_files
 
     if static_files not in valid_base_public_folder_names:
         raise CkanConfigurationException(
             'You provided an invalid value for ckan.base_public_folder. '
-            'Possible values are: "public" and "public-bs2".'
+            'Possible values are: "public".'
         )
 
     log.info('Loading static files from %s' % static_files)
@@ -87,16 +60,7 @@ def load_environment(global_conf, app_conf):
                  templates=[])
 
     # Initialize main CKAN config object
-    config.update(global_conf)
-    config.update(app_conf)
-
-    # Initialize Pylons own config object
-    pylons_config.init_app(global_conf, app_conf, package='ckan', paths=paths)
-
-    # Update the main CKAN config object with the Pylons specific stuff, as it
-    # quite hard to keep them separated. This should be removed once Pylons
-    # support is dropped
-    config.update(pylons_config)
+    config.update(conf)
 
     # Setup the SQLAlchemy database engine
     # Suppress a couple of sqlalchemy warnings
@@ -135,6 +99,8 @@ CONFIG_FROM_ENV_VARS = {
     'ckan.datastore.read_url': 'CKAN_DATASTORE_READ_URL',
     'ckan.redis.url': 'CKAN_REDIS_URL',
     'solr_url': 'CKAN_SOLR_URL',
+    'solr_user': 'CKAN_SOLR_USER',
+    'solr_password': 'CKAN_SOLR_PASSWORD',
     'ckan.site_id': 'CKAN_SITE_ID',
     'ckan.site_url': 'CKAN_SITE_URL',
     'ckan.storage_path': 'CKAN_STORAGE_PATH',
@@ -143,7 +109,8 @@ CONFIG_FROM_ENV_VARS = {
     'smtp.starttls': 'CKAN_SMTP_STARTTLS',
     'smtp.user': 'CKAN_SMTP_USER',
     'smtp.password': 'CKAN_SMTP_PASSWORD',
-    'smtp.mail_from': 'CKAN_SMTP_MAIL_FROM'
+    'smtp.mail_from': 'CKAN_SMTP_MAIL_FROM',
+    'ckan.max_resource_size': 'CKAN_MAX_UPLOAD_SIZE_MB'
 }
 # End CONFIG_FROM_ENV_VARS
 
@@ -153,6 +120,8 @@ def update_config():
     changes into account. It is called whenever a plugin is loaded as the
     plugin might have changed the config values (for instance it might
     change ckan.site_url) '''
+
+    webassets_init()
 
     for plugin in p.PluginImplementations(p.IConfigurer):
         # must do update in place as this does not work:
@@ -218,29 +187,25 @@ def update_config():
                              config.get('solr_password'))
     search.check_solr_schema_version()
 
-    routes_map = routing.make_map()
-    config['routes.map'] = routes_map
-    # The RoutesMiddleware needs its mapper updating if it exists
-    if 'routes.middleware' in config:
-        config['routes.middleware'].mapper = routes_map
-    # routes.named_routes is a CKAN thing
-    config['routes.named_routes'] = routing.named_routes
-    config['pylons.app_globals'] = app_globals.app_globals
+    lib_plugins.reset_package_plugins()
+    lib_plugins.register_package_plugins()
+    lib_plugins.reset_group_plugins()
+    lib_plugins.register_group_plugins()
+
     # initialise the globals
     app_globals.app_globals._init()
 
     helpers.load_plugin_helpers()
-    config['pylons.h'] = helpers.helper_functions
 
     # Templates and CSS loading from configuration
-    valid_base_templates_folder_names = ['templates', 'templates-bs2']
+    valid_base_templates_folder_names = ['templates']
     templates = config.get('ckan.base_templates_folder', 'templates')
     config['ckan.base_templates_folder'] = templates
 
     if templates not in valid_base_templates_folder_names:
         raise CkanConfigurationException(
             'You provided an invalid value for ckan.base_templates_folder. '
-            'Possible values are: "templates" and "templates-bs2".'
+            'Possible values are: "templates".'
         )
 
     jinja2_templates_path = os.path.join(root, templates)
@@ -253,48 +218,23 @@ def update_config():
         template_paths = extra_template_paths.split(',') + template_paths
     config['computed_template_paths'] = template_paths
 
-    # Set the default language for validation messages from formencode
-    # to what is set as the default locale in the config
-    default_lang = config.get('ckan.locale_default', 'en')
-    formencode.api.set_stdtranslation(domain="FormEncode",
-                                      languages=[default_lang])
-
     # Markdown ignores the logger config, so to get rid of excessive
     # markdown debug messages in the log, set it to the level of the
     # root logger.
     logging.getLogger("MARKDOWN").setLevel(logging.getLogger().level)
 
-    # Create Jinja2 environment
-    env = jinja_extensions.Environment(
-        loader=jinja_extensions.CkanFileSystemLoader(template_paths),
-        autoescape=True,
-        extensions=['jinja2.ext.do', 'jinja2.ext.with_',
-                    jinja_extensions.SnippetExtension,
-                    jinja_extensions.CkanExtend,
-                    jinja_extensions.CkanInternationalizationExtension,
-                    jinja_extensions.LinkForExtension,
-                    jinja_extensions.ResourceExtension,
-                    jinja_extensions.UrlForStaticExtension,
-                    jinja_extensions.UrlForExtension]
-    )
-    env.install_gettext_callables(_, ungettext, newstyle=True)
-    # custom filters
-    env.filters['empty_and_escape'] = jinja_extensions.empty_and_escape
-    config['pylons.app_globals'].jinja_env = env
-
     # CONFIGURATION OPTIONS HERE (note: all config options will override
     # any Pylons config options)
 
+    # Enable pessimistic disconnect handling (added in SQLAlchemy 1.2)
+    # to eliminate database errors due to stale pooled connections
+    config.setdefault('sqlalchemy.pool_pre_ping', True)
     # Initialize SQLAlchemy
-    engine = sqlalchemy.engine_from_config(config, client_encoding='utf8')
+    engine = sqlalchemy.engine_from_config(config)
     model.init_model(engine)
 
     for plugin in p.PluginImplementations(p.IConfigurable):
         plugin.configure(config)
-
-    # reset the template cache - we do this here so that when we load the
-    # environment it is clean
-    render.reset_template_info_cache()
 
     # clear other caches
     logic.clear_actions_cache()

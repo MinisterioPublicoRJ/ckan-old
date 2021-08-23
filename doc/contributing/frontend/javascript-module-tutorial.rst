@@ -51,8 +51,8 @@ translation object.
 
 .. Note::
     In order to include a module for page render inclusion within an
-    extension it is recommended that you use ``{% resource %}`` within
-    your templates. See the `Resource Documentation <./resources.html>`_
+    extension it is recommended that you use ``{% asset %}`` within
+    your templates. See the `Assets Documentation <./assets.html>`_
 
 Initialisation
 ~~~~~~~~~~~~~~
@@ -250,5 +250,5 @@ Now in our other module 'user-favorite-counter' we can listen for this.
 Unit Tests
 ----------
 
-Every module has unit tests. These use Mocha, Chai and Sinon to assert
+Every module has unit tests. These use Cypress to assert
 the expected functionality of the module.
