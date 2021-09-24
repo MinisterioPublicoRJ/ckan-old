@@ -219,6 +219,9 @@ def augment_data(data, schema):
 
 def convert(converter, key, converted_data, errors, context):
     try:
+        if converter == str:
+            print(converter, key, converted_data)
+            return
         nargs = converter.__code__.co_argcount
     except AttributeError:
         raise TypeError(
