@@ -40,6 +40,11 @@ Host ports requirements:
 
 .. _run-package-installer:
 
+
+If you use Vagrant and a VM, put this in your Vagrantfile:
+
+``config.vm.network "private_network", ip: "192.168.33.10"``
+
 ---------------------------
 1. Install the CKAN package
 ---------------------------
@@ -126,6 +131,26 @@ Install |solr|, running this command in a terminal::
 
 .. include:: solr.rst
 
+Check if solr installation is working by accessing::
+
+    http://localhost:8983/solr/
+    
+You should see solr welcome page. If you are using a VM, you may not be able to access port 8983 from your host. So you should execute this command on your VM::
+
+    curl -v http://localhost:8983/solr/
+    
+If you get the following error::
+
+    500 error on solr JSP support not configured
+    
+Execute the following commands::
+
+    cd /tmp
+    wget https://launchpad.net/~vshn/+archive/ubuntu/solr/+files/solr-jetty-jsp-fix_1.0.2_all.deb
+    sudo dpkg -i solr-jetty-jsp-fix_1.0.2_all.deb
+    sudo service jetty restart
+    
+    
 -------------------------------------------------------
 4. Update the configuration and initialize the database
 -------------------------------------------------------
