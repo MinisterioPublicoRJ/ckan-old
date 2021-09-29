@@ -93,6 +93,8 @@
 		          {{ h.build_nav_main(
 		            ('dataset.search', _('Datasets'), ["dataset", "resource"]),
 			    ('produtos.search', _('Produtos'), ["produtos", "resource"]),
+			    ('paginaparceiro.search', _('Páginas de Parceiro'), ["paginaparceiro", "resource"]),
+			    ('repositorio.search', _('Repositório de Dados'), ["repositorio", "resource"]),
 		            (org_type ~ '.index',
                   h.humanize_entity_type('organization', org_type, 'main nav') or _('Organizations'), ['organization']),
 		            (group_type ~ '.index',
